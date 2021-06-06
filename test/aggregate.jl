@@ -95,13 +95,11 @@ end
             [15 15 15 18 18 18 
              15 15 15 18 18 18
              15 15 15 18 18 18]
-
         stack1_aggstart = aggregate(Start(), stack1, scale)
         @test stack1_aggstart[:array2] == [2 8]
         stack1_disaggstart = disaggregate(Start(), stack1_aggstart, scale)
         @test stack1_disaggstart[:array1] == disaggstart 
         @test aggregate(Center(), stack1, scale)[:array2] == [16 22]
-
         series_aggcenter = aggregate(Center(), series, scale)
         @test series_aggcenter[2][:array2] == [32 44]
         series_disaggcenter = disaggregate(Center(), series_aggcenter, scale)

@@ -17,15 +17,12 @@ series[Time(Near(DateTime(2001, 1))][:temp][Y(Between(70, 150)), X(Between(-20,2
 `GeoSeries` is the only concrete implementation. It includes a `chiltype` field
 indicating the constructor used then loading stacks or arrays of any type from disk,
 and holds a `kwargs` `NamedTuple` that will be splatted into to the keyword arguments
-of the `childtype` constructor. This gives control over the construction of lazy-loaded
+of the `child` constructor. This gives control over the construction of lazy-loaded
 files.
 """
-abstract type AbstractGeoSeries{T,N,D,A,C} <: AbstractDimensionalArray{T,N,D,A} end
+abstract type AbstractGeoSeries{T,N,D,A} <: AbstractDimensionalArray{T,N,D,A} end
 
 # Interface methods ####################################################
-
-childtype(A::AbstractGeoSeries) = A.childtype
-childkwargs(A::AbstractGeoSeries) = A.childkwargs
 
 DD.metadata(A::AbstractGeoSeries) = nothing
 DD.name(A::AbstractGeoSeries) = NoName()
@@ -47,30 +44,7 @@ This is useful for swapping out array backend for an
 entire series to `CuArray` from CUDA.jl to copy data to a GPU,
 and potentially other types like `DAarray` from Distributed.jl.
 """
-DD.modify(f, A::AbstractGeoSeries) = rebuild(A, map(child -> modify(f, child), values(A)))
-
-Base.values(A::AbstractGeoSeries) = [A[I] for I in CartesianIndices(A)]
-
-# Array interface methods ##############################################
-# Mostly these inherit from AbstractDimensionalArray
-
-@propagate_inbounds function Base.getindex(
-    A::AbstractGeoSeries{<:AbstractString}, I::CartesianIndex
-)
-    childtype(A)(data(A)[I]; refdims=DD.slicedims(A, Tuple(I))[2], A.childkwargs...)
-end
-@propagate_inbounds function Base.getindex(
-    A::AbstractGeoSeries{<:AbstractString}, I::Integer...
-)
-    childtype(A)(data(A)[I...]; refdims=DD.slicedims(A, I)[2], A.childkwargs...)
-end
-# Window is passed on to existing MemStacks, as with DiskStacks
-@propagate_inbounds function Base.getindex(
-    A::AbstractGeoSeries{<:AbstractGeoStack}, I::Integer...
-)
-    rebuild(data(A)[I...]; A.childkwargs...)
-end
-
+DD.modify(f, A::AbstractGeoSeries) = map(child -> modify(f, child), values(A))
 
 """
     GeoSeries <: AbstractGeoSeries
@@ -84,52 +58,67 @@ Series hold paths to array or stack files, along some dimension(s).
 
 # Keywords
 
-- `refdims`: existing reference 
-- `childtype`: type of child objects - an `AbstractGeoSeries` or `AbstractGeoStack`
-- `childkwargs`: keyword arguments passed to the child object on construction.
+- `dims` known dimensions. These are usually read from the first file in the series
+    and are assumed to be _the same for all stacks/arrays in the series_.
+- `refdims`: existing reference dimension/s 
+- `child`: constructor of child objects - `geoarray` or `stack`
 """
-struct GeoSeries{T,N,D,R,A<:AbstractArray{T,N},C,K} <: AbstractGeoSeries{T,N,D,A,C}
+struct GeoSeries{T,N,D,R,A<:AbstractArray{T,N}} <: AbstractGeoSeries{T,N,D,A}
     data::A
     dims::D
     refdims::R
-    childtype::C
-    childkwargs::K
 end
 function GeoSeries(
-    data::Array{T}, dims; refdims=(), childtype=DD.basetypeof(T), childkwargs=()
+    data::Array{T}, dims; refdims=(), child=nothing, window=nothing
 ) where T<:Union{<:AbstractGeoStack,<:AbstractGeoArray}
-    GeoSeries(data, DD.formatdims(data, dims), refdims, childtype, childkwargs)
+    ser=  GeoSeries(data, DD.formatdims(data, dims), refdims)
+    if window isa Nothing
+        ser
+    else
+        map(x -> view(x, window...), ser)
+    end
 end
-function GeoSeries(data, dims; refdims=(), childtype, childkwargs=())
-    GeoSeries(data, DD.formatdims(data, dims), refdims, childtype, childkwargs)
+function GeoSeries(
+    data::Array{T}, dims; refdims=(), child=geoarray, kw...
+) where T<:Union{<:AbstractString}
+    source = _sourcetype(first(data))
+    # Load the firs child
+    child1 = child(first(data); source, refdims, kw...)
+    if child == geoarray
+        # We assume all dims, metadata and missingvals are the same
+        childdims = DD.dims(child1)
+        metadata = DD.metadata(child1)
+        missingval = GeoData.missingval(child1)
+        data = map(data) do x
+            child(x; 
+                dims=childdims, source, metadata, missingval, name=name(child1), kw...
+            )
+        end
+    else
+        # We assume all dims, metadata and missingvals are the same
+        childdims = DD.dims(child1)
+        metadata = DD.metadata(child1)
+        layerdims = DD.layerdims(child1)
+        layermetadata = DD.layermetadata(child1)
+        layermissingval = GeoData.layermissingval(child1)
+        data = map(data) do x
+            child(x; 
+                dims=childdims, source, metadata, layerdims, layermetadata, 
+                layermissingval, keys=keys(child1), kw...
+            )
+        end
+    end
+    GeoSeries(data, DD.formatdims(data, dims), refdims)
 end
 
 @inline function DD.rebuild(
-    A::GeoSeries, data, dims::Tuple, refdims, name=name(A), childtype=childtype(A), childkwargs=childkwargs(A)
+    A::GeoSeries, data, dims::Tuple, refdims=(), name=nothing, metadata=nothing,
 )
-    ct = _choosechildtype(data, childtype)
-    GeoSeries(data, dims, refdims, ct, childkwargs)
+    GeoSeries(data, dims, refdims)
 end
 @inline function DD.rebuild(
     A::GeoSeries; 
-    data=data(A), dims=dims(A), refdims=refdims(A), name=nothing, childtype=childtype(A), childkwargs=childkwargs(A)
+    data=data(A), dims=dims(A), refdims=refdims(A), name=nothing, metadata=nothing,
 )
-    ct = _choosechildtype(data, childtype)
-    GeoSeries(data, dims, refdims, ct, childkwargs)
-end
-
-function _choosechildtype(data, childtype)
-    ct = if data isa AbstractString 
-        childtype(A)
-    elseif data isa AbstractVector{<:AbstractString}
-        childtype(A)
-    elseif length(data) > 0
-        DD.basetypeof(first(data))
-    else
-        Nothing
-    end
-end
-
-@propagate_inbounds function Base.setindex!(A::GeoSeries, x, I::StandardIndices...)
-    setindex!(data(A), x, I...)
+    GeoSeries(data, dims, refdims)
 end

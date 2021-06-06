@@ -18,9 +18,9 @@ ga1 = GeoArray(data1, dims1; refdims=refdimz, name=nme, metadata=meta, missingva
 @test ga2 == data2
 
 @testset "arary dims have been formatted" begin
-    @test val.(dims(ga2)) == val.((X<|LinRange(10.0, 100.0, 10), 
-                                   Y<|LinRange(-50.0, 50.0, 11),
-                                   Ti<|[DateTime(2019)]))
+    @test val.(dims(ga2)) == val.((X(LinRange(10.0, 100.0, 10)), 
+                                   Y(LinRange(-50.0, 50.0, 11)),
+                                   Ti([DateTime(2019)])))
     @test dims(ga1)[1:2] == dims(ga2)[1:2]
     @test name(ga1) == :test
     @test missingval(ga1) == -9999.0

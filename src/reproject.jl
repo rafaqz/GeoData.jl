@@ -1,5 +1,4 @@
 export reproject, convertmode, mappedindex, mappedbounds
-const AG = ArchGDAL
 
 # These methods are only available if ArchGDAL is loaded.
 # Otherwise Projected selector crs field must be `nothing`,
@@ -26,25 +25,25 @@ a single dimension at a time.
 """
 reproject(source, target, dim::Dimension, val) = val
 function reproject(source::GeoFormat, target::GeoFormat, dim::X, val::Number)
-    AG.reproject((Float64(val), 0.0), source, target; order=:trad)[1]
+    AG.reproject((val, zero(val)), source, target; order=:trad)[1]
 end
 function reproject(source::GeoFormat, target::GeoFormat, dim::Y, val::Number)
-    AG.reproject((0.0, Float64(val)), source, target; order=:trad)[2]
+    AG.reproject((zero(val), val), source, target; order=:trad)[2]
 end
 function reproject(source::GeoFormat, target::GeoFormat, ::X, vals::AbstractArray)
-    rep = AG.reproject(map(v -> (Float64(v), 0.0), vals), source, target; order=:trad)
+    rep = AG.reproject(map(v -> (v, zero(v)), vals), source, target; order=:trad)
     map(r -> r[1], rep)
 end
 function reproject(source::GeoFormat, target::GeoFormat, dim::Y, vals::AbstractArray)
-    rep = AG.reproject(map(v -> (0.0, Float64(v)), vals), source, target; order=:trad)
+    rep = AG.reproject(map(v -> (zero(v), v), vals), source, target; order=:trad)
     map(r -> r[2], rep)
 end
 function reproject(source::GeoFormat, target::GeoFormat, ::X, vals::Tuple)
-    reps = AG.reproject([(Float64(v), 0.0) for v in vals], source, target; order=:trad)
+    reps = AG.reproject([(v, zero(v)) for v in vals], source, target; order=:trad)
     Tuple(r[1] for r in reps)
 end
 function reproject(source::GeoFormat, target::GeoFormat, dim::Y, vals::Tuple)
-    reps = AG.reproject([(0.0, Float64(v)) for v in vals], source, target; order=:trad)
+    reps = AG.reproject([(zero(v), v) for v in vals], source, target; order=:trad)
     Tuple(r[2] for r in reps)
 end
 

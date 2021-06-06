@@ -5,7 +5,6 @@ struct GeoZPlot end
 # Otherwise they fall back to DimensionalData.jl recipes
 @recipe function f(A::AbstractGeoArray)
     ddplot(A) = DimArray(A; dims=_maybe_mapped(dims(A)))
-
     A = GeoArray(A)
     if !(get(plotattributes, :seriestype, :none) in (:none, :heatmap))
         DD.DimensionalPlot(), ddplot(A)
@@ -92,7 +91,7 @@ end
 _prepare(d::Dimension) = d |> _maybe_shift |> _maybe_mapped |> index
 # Convert arrays to a consistent missing value and Forward array order
 _prepare(A::AbstractGeoArray) =
-    _maybe_replace_missing(A) |>
+    replace_missing(A, missing) |>
     A -> reorder(A, ForwardIndex) |>
     A -> reorder(A, ForwardRelation) |>
     A -> permutedims(A, DD.commondims(>:, (ZDim, YDim, XDim, TimeDim, Dimension), dims(A)))

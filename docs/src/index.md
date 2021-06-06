@@ -14,10 +14,7 @@ transformations.
 geoarray
 geoarray(T::Type{<:RasterDataSources.RasterDataSource})
 AbstractGeoArray
-MemGeoArray
-DiskGeoArray
 GeoArray
-GeoData.OpenGeoArray
 ```
 
 ## Stack
@@ -29,10 +26,7 @@ Stacks can represent this, or multiple files organised in a similar way.
 stack
 stack(T::Type{<:RasterDataSources.RasterDataSource})
 AbstractGeoStack
-MemGeoStack
 GeoStack
-DiskGeoStack
-DiskStack
 ```
 
 ## Series
@@ -82,11 +76,6 @@ R GRD files can be loaded natively. The are always 3 dimensional, and have
 
 If ArchGDAL.jl is loaded (to enable reprojection), they can have [`mappedcrs`](@ref).
 
-```@docs
-GRDarray
-GRDstack
-```
-
 ## NetCDF
 
 NetCDF files requires NCDatasets.jl to be imported:
@@ -97,10 +86,6 @@ import NCDatasets
 
 Single files can be treated as a array or a stack of arrays. 
 
-```@docs
-NCDarray
-NCDstack
-```
 
 ## GDAL
 
@@ -109,11 +94,6 @@ imported:
 
 ```julia
 import ArchGDAL
-```
-
-```@docs
-GDALarray
-GDALstack
 ```
 
 ## SMAP
@@ -129,12 +109,11 @@ import HDF5
 
 Files must be downloaded manually due to authentication restrictions. As the
 datasets are know files in standardised formats, whole folders can be loaded
-using [`SMAPseries`](@ref). Methods like `aggregate` can be done over whole
+using [`smapseries`](@ref). Methods like `aggregate` can be done over whole
 folders of stacks of data with a single command.
 
 ```@docs
-SMAPstack
-SMAPseries
+smapseries
 ```
 
 ## Helper methods
@@ -148,14 +127,17 @@ These methods are specific to GeoData.jl:
 ```@docs
 replace_missing
 resample
+reproject
 boolmask
 missingmask
 aggregate
 aggregate!
 disaggregate
 disaggregate!
+crop
+extend
+slice
 convertmode
-reproject
 ```
 
 Field access:
@@ -166,22 +148,13 @@ crs
 mappedcrs
 mappedbounds
 mappedindex
-data
 ```
 
-Not exported:
-```@docs
-GeoData.filename
-GeoData.childkwargs
-```
-
-These Base and DimensionalData methods have specific GeoData.jl version:
+These Base and DimensionalData methods have specific GeoData.jl versions:
 
 ```@docs
+modify
 read
 open
 write
-cat
-copy!
-modify
 ```

@@ -21,7 +21,7 @@ include(joinpath(dirname(pathof(GeoData)), "../test/test_utils.jl"))
     end
 
     ## Resample cea.tif using resample
-    cea = GeoArray(GDALarray(raster_path))
+    cea = read(geoarray(raster_path))
     crs(cea)
     GD_output = resample(cea, output_res, crs=output_crs, method=resample_method)
 

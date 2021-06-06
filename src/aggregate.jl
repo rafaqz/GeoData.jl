@@ -50,25 +50,22 @@ function aggregate(
 )
     f = key -> aggregate(method, stack[key], scale)
     keys_nt = NamedTuple{keys}(keys)
-    data = if progress
+    arrays = if progress
         @showprogress "Aggregating stack..." map(f, keys_nt)
     else
         map(f, keys_nt)
     end
-    return GeoStack(stack; data=data)
+    return GeoStack(arrays)
 end
 # DimensionalData methods
 """
     aggregate(method, src::AbstractDimArray, scale)
 
 Aggregate an `AbstractDimArray` by `scale` using `method`.
-
-[`DiskGeoArray`](@ref) will be converted to [`GeoArray`](@ref).
 """
 function aggregate(method, src::AbstractDimArray, scale)
     aggregate!(method, alloc_ag(method, src, scale), src, scale)
 end
-aggregate(method, src::DiskGeoArray, scale) = aggregate(method, GeoArray(src), scale)
 """
     aggregate(method, dim::Dimension, scale)
 
@@ -175,25 +172,22 @@ function disaggregate(method, stack::AbstractGeoStack, scale;
 )
     f = key -> disaggregate(method, stack[key], scale)
     keys_nt = NamedTuple{keys}(keys)
-    data = if progress
+    arrays = if progress
         @showprogress "Disaggregating stack..." map(f, keys_nt)
     else
         map(f, keys_nt)
     end
-    return GeoStack(stack; data=data)
+    return GeoStack(arrays)
 end
 # DimensionalData methods
 """
     disaggregate(method, src::AbstractDimArray, scale)
 
 Disaggregate an `AbstractDimArray` by `scale` using `method`.
-
-[`DiskGeoArray`](@ref) will be converted to [`GeoArray`](@ref).
 """
 function disaggregate(method, src::AbstractDimArray, scale)
     disaggregate!(method, alloc_disag(method, src, scale), src, scale)
 end
-disaggregate(method, src::DiskGeoArray, scale) = disaggregate(method, GeoArray(src), scale)
 """
     disaggregate(method, dim::Dimension, scale)
 

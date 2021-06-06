@@ -1,4 +1,6 @@
-using .ArchGDAL
+export GDALstack, GDALarray
+
+const AG = ArchGDAL
 
 const GDAL_X_INDEX = ForwardIndex()
 const GDAL_Y_INDEX = ReverseIndex()
@@ -10,83 +12,24 @@ const GDAL_RELATION = ForwardRelation()
 const GDAL_X_LOCUS = Start()
 const GDAL_Y_LOCUS = Start()
 
-export GDALarray, GDALstack
-
 # Array ########################################################################
 
-"""
-    GDALarray(filename; kw...)
+@deprecate GDALarray(args...; kw...) GeoArray(args...; source=GDALfile, kw...)
 
-Load a file lazily using gdal. `GDALarray` will be converted to [`GeoArray`](@ref)
-after indexing or other manipulations. `GeoArray(GDALarray(filename))` will do this
-immediately.
-
-`GDALarray`s are always 3 dimensional, and have `X`, `Y` and [`Band`](@ref) dimensions.
-
-# Arguments
-
-- `filename`: `String` pointing to a tif or other file that GDAL can load.
-
-# Keywords
-
-- `crs`: crs to use instead of the detected crs
-- `mappedcrs`: CRS format like `EPSG(4326)` used in `Selectors` like `Between` and `At`, and
-    for plotting. Can be any CRS `GeoFormat` from GeoFormatTypes.jl, like `WellKnownText`.
-- `name`: `Symbol` name for the array.
-- `dims`: `Tuple` of `Dimension`s for the array. Detected automatically, but can be passed in.
-- `refdims`: `Tuple of` position `Dimension`s the array was sliced from.
-- `missingval`: Value reprsenting missing values. Detected automatically when possible, but
-    can be passed it.
-- `metadata`: `Metadata` object for the array. Detected automatically as
-    `Metadata{:GDAL}`, but can be passed in.
-
-# Example
-
-```julia
-A = GDALarray("folder/file.tif"; mappedcrs=EPSG(4326))
-# Select Australia using lat/lon coords, whatever the crs is underneath.
-A[Y(Between(-10, -43), X(Between(113, 153)))
-```
-"""
-struct GDALarray{T,N,F,D<:Tuple,R<:Tuple,Na<:Symbol,Me,Mi,S
-                } <: DiskGeoArray{T,N,D,LazyArray{T,N}}
-    filename::F
-    dims::D
-    refdims::R
-    name::Na
-    metadata::Me
-    missingval::Mi
-    size::S
+function FileArray(raster::AG.RasterDataset{T}, filename; kw...) where {T}
+    eachchunk = DA.eachchunk(raster)
+    haschunks = DA.haschunks(raster)
+    FileArray{GDALfile,T,3}(filename, size(raster); eachchunk, haschunks, kw...)
 end
-function GDALarray(filename::AbstractString; kw...)
-    isfile(filename) || error("file not found: $filename")
-    _gdalread(filename) do raster
-        GDALarray(raster, filename; kw...)
-    end
-end
-function GDALarray(raster::AG.RasterDataset, filename, key=nothing;
-    crs=nothing,
-    mappedcrs=nothing,
-    dims=dims(raster, crs, mappedcrs),
-    refdims=(),
-    name=Symbol(""),
-    metadata=metadata(raster),
-    missingval=missingval(raster)
-)
-    sze = size(raster)
-    T = eltype(raster)
-    N = length(sze)
-    name = Symbol(name)
-    GDALarray{T,N,typeof.((filename,dims,refdims,name,metadata,missingval,sze))...
-             }(filename, dims, refdims, name, metadata, missingval, sze)
-end
+
+cleanreturn(A::AG.RasterDataset) = Array(A)
 
 # AbstractGeoArray methods
 
 """
-    Base.write(filename::AbstractString, ::Type{GDALarray}, A::AbstractGeoArray; kw...)
+    Base.write(filename::AbstractString, ::Type{GDALfile}, A::AbstractGeoArray; kw...)
 
-Write a [`GDALarray`](@ref) to file, `.tif` by default, but other GDAL drivers also work.
+Write a `GeoArray` to file using GDAL.
 
 # Keywords
 
@@ -97,26 +40,26 @@ Write a [`GDALarray`](@ref) to file, `.tif` by default, but other GDAL drivers a
 Returns `filename`.
 """
 function Base.write(
-    filename::AbstractString, ::Type{<:GDALarray}, A::AbstractGeoArray{T,2}; kw...
+    filename::AbstractString, ::Type{GDALfile}, A::AbstractGeoArray{T,2}; kw...
 ) where T
-    all(hasdim(A, (XDim, Y))) || error("Array must have Y and X dims")
-
+    all(hasdim(A, (X, Y))) || error("Array must have Y and X dims")
+    correctedA = A
     correctedA = permutedims(A, (X(), Y())) |>
         a -> reorder(a, (X(GDAL_X_INDEX), Y(GDAL_Y_INDEX))) |>
         a -> reorder(a, GDAL_RELATION)
     checkarrayorder(correctedA, (GDAL_X_ARRAY, GDAL_Y_ARRAY))
     checkindexorder(correctedA, (GDAL_X_INDEX, GDAL_Y_INDEX))
 
-    nbands = 1
-    indices = 1
-    _gdalwrite(filename, correctedA, nbands, indices; kw...)
+    nbands = 1 
+    _gdalwrite(filename, correctedA, nbands; kw...)
 end
 function Base.write(
-    filename::AbstractString, ::Type{<:GDALarray}, A::AbstractGeoArray{T,3}, kw...
+    filename::AbstractString, ::Type{GDALfile}, A::AbstractGeoArray{T,3}, kw...
 ) where T
     all(hasdim(A, (X, Y))) || error("Array must have Y and X dims")
     hasdim(A, Band()) || error("Must have a `Band` dimension to write a 3-dimensional array")
 
+    correctedA = A
     correctedA = permutedims(A, (X(), Y(), Band())) |>
         a -> reorder(a, (X(GDAL_X_INDEX), Y(GDAL_Y_INDEX), Band(GDAL_BAND_INDEX))) |>
         a -> reorder(a, GDAL_RELATION)
@@ -124,63 +67,32 @@ function Base.write(
     checkindexorder(correctedA, (GDAL_X_INDEX, GDAL_Y_INDEX, GDAL_BAND_INDEX))
 
     nbands = size(correctedA, Band())
-    indices = Cint[1:nbands...]
-    _gdalwrite(filename, correctedA, nbands, indices; kw...)
+    _gdalwrite(filename, correctedA, nbands; kw...)
 end
 
-
-# AbstractGeoStack methods
-
-"""
-    GDALstack(filenames; keys, kw...)
-    GDALstack(filenames...; keys, kw...)
-    GDALstack(filenames::NamedTuple; kw...)
-
-Convenience method to create a DiskStack  of [`GDALarray`](@ref) from `filenames`.
-
-Load a stack of files lazily from disk.
-
-# Arguments
-
-- `filenames`: A NamedTuple of stack keys and `String` filenames, or a `Tuple`,
-    `Vector` or splatted arguments of `String` filenames.
-
-# Keyword arguments
-
-- `keys`: Used as stack keys when a `Tuple`, `Vector` or splat of filenames are passed in.
-- `window`: A `Tuple` of `Dimension`/`Selector`/indices that will be applied to the
-    contained arrays when they are accessed.
-- `metadata`: a `DimensionalData.Metadata` object.
-- `childkwargs`: A `NamedTuple` of keyword arguments to pass to the `childtype` constructor.
-- `refdims`: `Tuple` of  position `Dimension` the array was sliced from.
-
-# Example
-
-Create a `GDALstack` from four files, that sets the child arrays `mappedcrs` value
-when they are loaded.
-
-```julia
-files = (:temp="temp.tif", :pressure="pressure.tif", :relhum="relhum.tif")
-stack = GDALstack(files; childkwargs=(mappedcrs=EPSG(4326),))
-stack[:relhum][Y(Contains(-37), X(Contains(144))
-```
-"""
-GDALstack(args...; kw...) = DiskStack(args...; childtype=GDALarray, kw...)
-
-withsource(f, ::Type{<:GDALarray}, filename::AbstractString, key...) = _gdalread(f, filename)
+function _add_band_dim(A)
+    data = reshape(A, (size(A)..., 1))
+    dims = (DD.dims(A)..., Band(1:1; mode=Categorical(Ordered())))
+    rebuild(A, data, dims) 
+end
 
 
 # DimensionalData methods for ArchGDAL types ###############################
 
+@deprecate GDALstack(args...; kw...) GeoStack(args...; source=GDALfile, kw...)
+
 function DD.dims(raster::AG.RasterDataset, crs=nothing, mappedcrs=nothing)
     gt = try
-        AG.getgeotransform(raster) catch GDAL_EMPTY_TRANSFORM end
+        AG.getgeotransform(raster) 
+    catch 
+        GDAL_EMPTY_TRANSFORM 
+    end
     xsize, ysize = size(raster)
 
     nbands = AG.nraster(raster)
     band = Band(1:nbands, mode=Categorical(Ordered()))
     crs = crs isa Nothing ? GeoData.crs(raster) : crs
-    xy_metadata = Metadata{:GDAL}()
+    xy_metadata = Metadata{GDALfile}()
 
     # Output Sampled index dims when the transformation is lat/lon alligned,
     # otherwise use Transformed index, with an affine map.
@@ -232,6 +144,8 @@ function DD.dims(raster::AG.RasterDataset, crs=nothing, mappedcrs=nothing)
     end
 end
 
+DD.refdims(raster::AG.RasterDataset, args...) = ()
+
 function DD.metadata(raster::AG.RasterDataset, args...)
     band = AG.getband(raster.ds, 1)
     # color = AG.getname(AG.getcolorinterp(band))
@@ -241,7 +155,7 @@ function DD.metadata(raster::AG.RasterDataset, args...)
     path = first(AG.filelist(raster))
     units = AG.getunittype(band)
     upair = units == "" ? () : (:units=>units,)
-    Metadata{:GDAL}(Dict(:filepath=>path, :scale=>scale, :offset=>offset, upair...))
+    Metadata{GDALfile}(Dict(:filepath=>path, :scale=>scale, :offset=>offset, upair...))
 end
 
 function missingval(raster::AG.RasterDataset, args...)
@@ -261,21 +175,51 @@ function missingval(raster::AG.RasterDataset, args...)
     end
 end
 
-# metadata(raster::RasterDataset, key) = begin
-#     regex = Regex("$key=(.*)")
-#     i = findfirst(f -> occursin(regex, f), meta)
-#     if i isa Nothing
-#         nothing
-#     else
-#         match(regex, meta[i])[1]
-#     end
-# end
-
 crs(raster::AG.RasterDataset, args...) =
     WellKnownText(GeoFormatTypes.CRS(), string(AG.getproj(raster.ds)))
 
 
 # Utils ########################################################################
+
+function _read(f, ::Type{GDALfile}, filename::AbstractString; write=false, kw...)
+    flags = write ? (; flags=AG.OF_Update) : () 
+    AG.readraster(cleanreturn ∘ f, filename; flags...)
+end
+
+function _gdalwrite(filename, A::AbstractGeoArray, nbands; 
+    driver=AG.extensiondriver(filename), compress="DEFLATE", chunk=nothing
+)
+    kw = (width=size(A, X()), height=size(A, Y()), nbands=nbands, dtype=eltype(A))
+    gdaldriver = AG.getdriver(driver)
+    if driver == "GTiff" 
+        block_x, block_y = DA.eachchunk(A).chunksize
+        tileoptions = if chunk === nothing
+            ["TILED=NO"]
+        else
+            ["TILED=YES", "BLOCKXSIZE=$block_x", "BLOCKYSIZE=$block_y"]
+        end
+        options = ["COMPRESS=$compress", tileoptions...]
+        AG.create(filename; driver=gdaldriver, options=options, kw...) do ds
+            _gdalsetproperties!(ds, A)
+            rds = AG.RasterDataset(ds)
+            open(A; write=true) do O
+                rds .= parent(O)
+            end
+        end
+    else
+        # Create a  memory object and copy it to disk, as ArchGDAL.create
+        # does not support direct creation of ASCII etc. rasters
+        ArchGDAL.create(""; driver=AG.getdriver("MEM"), kw...) do ds
+            _gdalsetproperties!(ds, A)
+            rds = AG.RasterDataset(ds)
+            open(A; write=true) do O
+                rds .= parent(O)
+            end
+            AG.copy(ds; filename=filename, driver=gdaldriver) |> AG.destroy
+        end
+    end
+    return filename
+end
 
 function _gdalmetadata(dataset::AG.Dataset, key)
     meta = AG.metadata(dataset)
@@ -286,36 +230,6 @@ function _gdalmetadata(dataset::AG.Dataset, key)
     else
         match(regex, meta[i])[1]
     end
-end
-
-function _gdalread(f, filename::AbstractString)
-    AG.readraster(filename) do raster
-        f(raster)
-    end
-end
-
-function _gdalwrite(filename, A, nbands, indices; 
-    driver=AG.extensiondriver(filename), compress="DEFLATE", tiled=true
-)
-    tiledstring = tiled isa Bool ? (tiled ? "YES" : "NO") : tiled
-    kw = (width=size(A, X()), height=size(A, Y()), nbands=nbands, dtype=eltype(A))
-    gdaldriver = AG.getdriver(driver)
-    if driver == "GTiff" 
-        options = ["COMPRESS=$compress", "TILED=$tiledstring"]
-        AG.create(filename; driver=gdaldriver, options=options, kw...) do dataset
-            _gdalsetproperties!(dataset, A)
-            AG.write!(dataset, data(A), indices)
-        end
-    else
-        # Create a  memory object and copy it to disk, as ArchGDAL.create
-        # does not support direct creation of ASCII etc. rasters
-        ArchGDAL.create(""; driver=AG.getdriver("MEM"), kw...) do dataset
-            _gdalsetproperties!(dataset, A)
-            AG.write!(dataset, data(A), indices)
-            AG.copy(dataset; filename=filename, driver=gdaldriver) |> AG.destroy
-        end
-    end
-    return filename
 end
 
 function _gdalsetproperties!(dataset, A)
@@ -346,18 +260,23 @@ function _gdalsetproperties!(dataset, A)
     dataset
 end
 
-
 # Create a GeoArray from a memory-backed dataset
-function GeoArray(dataset::AG.Dataset;
-    crs=nothing,
-    mappedcrs=nothing,
-    dims=dims(AG.RasterDataset(dataset), crs, mappedcrs),
-    refdims=(),
-    name=Symbol(""),
-    metadata=metadata(AG.RasterDataset(dataset)),
-    missingval=missingval(AG.RasterDataset(dataset))
+GeoArray(ds::AG.Dataset; kw...) = GeoArray(AG.RasterDataset(ds); kw...) 
+function GeoArray(ds::AG.RasterDataset;
+    crs=crs(ds), mappedcrs=nothing,
+    dims=dims(ds, crs, mappedcrs),
+    refdims=(), name=Symbol(""),
+    metadata=metadata(ds),
+    missingval=missingval(ds)
 )
-    GeoArray(AG.read(dataset), dims, refdims, name, metadata, missingval)
+    args = dims, refdims, name, metadata, missingval
+    filelist = AG.filelist(ds)
+    if length(filelist) > 0
+        filename = first(filelist)
+        return GeoArray(FileArray(ds, filename), args...)
+    else
+        return GeoArray(Array(ds), args...)
+    end
 end
 
 # Create a memory-backed GDAL dataset from any AbstractGeoArray
@@ -421,9 +340,9 @@ function _dims2geotransform(x::X, y::Y)
     gt = zeros(6)
     gt[GDAL_TOPLEFT_X] = first(x)
     gt[GDAL_WE_RES] = step(x)
-    gt[GDAL_ROT1] = 0.0
+    gt[GDAL_ROT1] = zero(eltype(gt))
     gt[GDAL_TOPLEFT_Y] = first(y) - step(y)
-    gt[GDAL_ROT2] = 0.0
+    gt[GDAL_ROT2] = zero(eltype(gt))
     gt[GDAL_NS_RES] = step(y)
     return gt
 end
