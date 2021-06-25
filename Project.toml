@@ -21,7 +21,7 @@ Requires = "ae029012-a4dd-5104-9daa-d747884805df"
 
 [compat]
 Adapt = "2, 3.0"
-ArchGDAL = "0.6"
+ArchGDAL = "0.6, 0.7"
 DimensionalData = "^0.17.4"
 GeoFormatTypes = "^0.2.1, 0.3"
 HDF5 = "0.14, 0.15"
